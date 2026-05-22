@@ -69,6 +69,18 @@
         font-size: 12px;
       }
 
+      .gps-summary.good {
+        color: #bdf7d4;
+      }
+
+      .gps-summary.warn {
+        color: #fff0a6;
+      }
+
+      .gps-summary.danger {
+        color: #ffc4bb;
+      }
+
       .toggle-panel {
         flex: 0 0 auto;
         width: 34px;
@@ -142,6 +154,7 @@
       }
 
       .copy-link,
+      .gps-button,
       .update-route {
         border: 0;
         border-radius: 6px;
@@ -157,6 +170,16 @@
         color: #fffdf6;
       }
 
+      .gps-button {
+        background: #45d483;
+        color: #07160d;
+      }
+
+      .gps-button.tracking {
+        background: #f0b5a8;
+        color: #1c0d08;
+      }
+
       .update-route {
         background: #ffdf4d;
         color: #17140a;
@@ -166,6 +189,30 @@
         min-height: 18px;
         color: #f0b5a8;
         font-size: 12px;
+      }
+
+      .gps-status {
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.08);
+        padding: 8px 10px;
+        font-size: 13px;
+        line-height: 1.35;
+      }
+
+      .gps-status.good {
+        border-color: rgba(69, 212, 131, 0.7);
+        color: #bdf7d4;
+      }
+
+      .gps-status.warn {
+        border-color: rgba(255, 223, 77, 0.8);
+        color: #fff0a6;
+      }
+
+      .gps-status.danger {
+        border-color: rgba(240, 111, 88, 0.9);
+        color: #ffc4bb;
       }
 
       .legend {
@@ -220,7 +267,10 @@
       <div class="panel-header">
         <div>
           <h1>Straight line mission</h1>
-          <div class="summary"><span id="distance-summary">Beräknar...</span> · silver 75 m</div>
+          <div class="summary">
+            <span id="distance-summary">Beräknar...</span> ·
+            <span class="gps-summary" id="gps-summary">GPS av</span>
+          </div>
         </div>
         <button
           class="toggle-panel"
@@ -272,6 +322,14 @@
           <dt>Silverzon</dt>
           <dd>75 m åt varje håll från linjen</dd>
         </dl>
+        <div class="actions">
+          <div class="gps-status" id="gps-status" aria-live="polite">
+            GPS ej aktiv.
+          </div>
+          <button class="gps-button" id="gps-button" type="button">
+            Starta GPS
+          </button>
+        </div>
         <label>
           Bildlager
           <select id="basemap">
@@ -336,6 +394,9 @@
       const sharedRoute = readSharedRoute();
       let currentStart = sharedRoute.start;
       let currentEnd = sharedRoute.end;
+      let currentLine = turf.lineString([currentStart, currentEnd]);
+      let latestPosition = null;
+      let watchId = null;
 
       const esri = new ol.layer.Tile({
         visible: true,
@@ -409,9 +470,35 @@
         }),
       });
 
+      const locationSource = new ol.source.Vector();
+      const locationLayer = new ol.layer.Vector({
+        source: locationSource,
+        style: (feature) => {
+          if (feature.get("kind") === "accuracy") {
+            return new ol.style.Style({
+              stroke: new ol.style.Stroke({
+                color: "rgba(82, 169, 255, 0.8)",
+                width: 2,
+              }),
+              fill: new ol.style.Fill({
+                color: "rgba(82, 169, 255, 0.16)",
+              }),
+            });
+          }
+
+          return new ol.style.Style({
+            image: new ol.style.Circle({
+              radius: 8,
+              stroke: new ol.style.Stroke({ color: "#ffffff", width: 3 }),
+              fill: new ol.style.Fill({ color: "#52a9ff" }),
+            }),
+          });
+        },
+      });
+
       const map = new ol.Map({
         target: "map",
-        layers: [esri, sentinel, topo, route, points],
+        layers: [esri, sentinel, topo, route, points, locationLayer],
         view: new ol.View({
           center: ol.proj.fromLonLat([
             (currentStart[0] + currentEnd[0]) / 2,
@@ -472,6 +559,7 @@
 
         currentStart = start;
         currentEnd = end;
+        currentLine = line;
         routeSource.clear();
         routeSource.addFeatures(features);
 
@@ -507,6 +595,139 @@
         if (shouldShare) {
           writeSharedRouteToUrl();
         }
+
+        updateOfflineWarning();
+      }
+
+      function updateLocationFeature(position) {
+        const coord = [position.coords.longitude, position.coords.latitude];
+        const projected = ol.proj.fromLonLat(coord);
+
+        latestPosition = {
+          coord,
+          accuracy: position.coords.accuracy,
+        };
+
+        locationSource.clear();
+        locationSource.addFeatures([
+          new ol.Feature({
+            geometry: new ol.geom.Circle(projected, position.coords.accuracy),
+            kind: "accuracy",
+          }),
+          new ol.Feature({
+            geometry: new ol.geom.Point(projected),
+            kind: "position",
+          }),
+        ]);
+
+        updateOfflineWarning();
+      }
+
+      function updateOfflineWarning() {
+        const gpsStatus = document.getElementById("gps-status");
+        const gpsSummary = document.getElementById("gps-summary");
+
+        if (!latestPosition) {
+          return;
+        }
+
+        const distanceM = turf.pointToLineDistance(
+          turf.point(latestPosition.coord),
+          currentLine,
+          { units: "meters" },
+        );
+        const accuracyText = Number.isFinite(latestPosition.accuracy)
+          ? ` · noggrannhet ±${Math.round(latestPosition.accuracy)} m`
+          : "";
+
+        gpsStatus.classList.remove("good", "warn", "danger");
+        gpsSummary.classList.remove("good", "warn", "danger");
+
+        if (distanceM <= 60) {
+          gpsStatus.classList.add("good");
+          gpsSummary.classList.add("good");
+          gpsStatus.textContent = `${Math.round(distanceM)} m från linjen${accuracyText}`;
+          gpsSummary.textContent = `${Math.round(distanceM)} m från linjen`;
+        } else if (distanceM <= 75) {
+          gpsStatus.classList.add("warn");
+          gpsSummary.classList.add("warn");
+          gpsStatus.textContent = `${Math.round(distanceM)} m från linjen · nära silvergränsen${accuracyText}`;
+          gpsSummary.textContent = `${Math.round(distanceM)} m nära gränsen`;
+        } else {
+          gpsStatus.classList.add("danger");
+          gpsSummary.classList.add("danger");
+          gpsStatus.textContent = `${Math.round(distanceM)} m från linjen · utanför 75 m${accuracyText}`;
+          gpsSummary.textContent = `${Math.round(distanceM)} m utanför`;
+        }
+      }
+
+      function startGps() {
+        const gpsStatus = document.getElementById("gps-status");
+        const gpsButton = document.getElementById("gps-button");
+        const gpsSummary = document.getElementById("gps-summary");
+
+        if (!("geolocation" in navigator)) {
+          gpsStatus.textContent = "GPS stöds inte i den här webbläsaren.";
+          gpsStatus.classList.add("danger");
+          gpsSummary.classList.add("danger");
+          gpsSummary.textContent = "GPS stöds ej";
+          return;
+        }
+
+        gpsStatus.classList.remove("good", "warn", "danger");
+        gpsSummary.classList.remove("good", "warn", "danger");
+        gpsStatus.textContent = "Väntar på GPS...";
+        gpsSummary.textContent = "väntar på GPS";
+        gpsButton.textContent = "Stoppa GPS";
+        gpsButton.classList.add("tracking");
+
+        watchId = navigator.geolocation.watchPosition(
+          updateLocationFeature,
+          (error) => {
+            gpsStatus.classList.remove("good", "warn");
+            gpsSummary.classList.remove("good", "warn");
+            gpsStatus.classList.add("danger");
+            gpsSummary.classList.add("danger");
+            gpsStatus.textContent =
+              error.code === error.PERMISSION_DENIED
+                ? "GPS nekades. Tillåt platsåtkomst i webbläsaren."
+                : "Kunde inte hämta GPS-position.";
+            gpsSummary.textContent =
+              error.code === error.PERMISSION_DENIED ? "GPS nekad" : "GPS fel";
+            gpsButton.textContent = "Starta GPS";
+            gpsButton.classList.remove("tracking");
+
+            if (watchId !== null) {
+              navigator.geolocation.clearWatch(watchId);
+              watchId = null;
+            }
+          },
+          {
+            enableHighAccuracy: true,
+            maximumAge: 1000,
+            timeout: 12000,
+          },
+        );
+      }
+
+      function stopGps() {
+        const gpsStatus = document.getElementById("gps-status");
+        const gpsButton = document.getElementById("gps-button");
+        const gpsSummary = document.getElementById("gps-summary");
+
+        if (watchId !== null) {
+          navigator.geolocation.clearWatch(watchId);
+          watchId = null;
+        }
+
+        latestPosition = null;
+        locationSource.clear();
+        gpsStatus.classList.remove("good", "warn", "danger");
+        gpsSummary.classList.remove("good", "warn", "danger");
+        gpsStatus.textContent = "GPS ej aktiv.";
+        gpsSummary.textContent = "GPS av";
+        gpsButton.textContent = "Starta GPS";
+        gpsButton.classList.remove("tracking");
       }
 
       updateRoute(currentStart, currentEnd);
@@ -606,6 +827,14 @@
           status.textContent = "Länk kopierad.";
         } catch {
           status.textContent = "Länken finns i adressfältet.";
+        }
+      });
+
+      document.getElementById("gps-button").addEventListener("click", () => {
+        if (watchId === null) {
+          startGps();
+        } else {
+          stopGps();
         }
       });
     </script>
