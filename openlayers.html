@@ -26,6 +26,11 @@
         color: #f7f3ea;
       }
 
+      body.dragging-point,
+      body.dragging-point #map {
+        cursor: grabbing;
+      }
+
       #map {
         width: 100vw;
         height: 100vh;
@@ -131,20 +136,30 @@
 
       .actions {
         display: grid;
-        grid-template-columns: 1fr max-content;
+        grid-template-columns: 1fr max-content max-content;
         gap: 8px;
         align-items: center;
       }
 
+      .copy-link,
       .update-route {
         border: 0;
         border-radius: 6px;
-        background: #ffdf4d;
-        color: #17140a;
         cursor: pointer;
         font: inherit;
         font-weight: 750;
         padding: 9px 12px;
+      }
+
+      .copy-link {
+        border: 1px solid rgba(255, 255, 255, 0.24);
+        background: #202020;
+        color: #fffdf6;
+      }
+
+      .update-route {
+        background: #ffdf4d;
+        color: #17140a;
       }
 
       .status {
@@ -178,6 +193,13 @@
         height: 14px;
         border: 2px solid #45d483;
         background: rgba(69, 212, 131, 0.26);
+      }
+
+      .hint {
+        margin: 0;
+        color: #eee8d7;
+        font-size: 12px;
+        line-height: 1.35;
       }
 
       .ol-attribution {
@@ -232,6 +254,9 @@
           </label>
           <div class="actions">
             <div class="status" id="route-status" aria-live="polite"></div>
+            <button class="copy-link" id="copy-link" type="button">
+              Länk
+            </button>
             <button class="update-route" id="update-route" type="button">
               Uppdatera
             </button>
@@ -259,6 +284,7 @@
           <span><i class="sample"></i>Rak linje</span>
           <span><i class="sample buffer"></i>75 m avvikelse</span>
         </div>
+        <p class="hint">Dra start- eller slutpunkten på kartan för att ändra linjen.</p>
       </div>
     </aside>
 
@@ -267,9 +293,49 @@
     <script>
       const initialStart = [18.234171, 59.115022];
       const initialEnd = [17.680517, 59.15223];
-      let currentStart = initialStart;
-      let currentEnd = initialEnd;
       const geoJsonFormat = new ol.format.GeoJSON();
+
+      function parseCoordinate(value) {
+        const parts = value
+          .trim()
+          .split(/[,\s]+/)
+          .filter(Boolean)
+          .map(Number);
+
+        if (parts.length !== 2 || parts.some((part) => Number.isNaN(part))) {
+          throw new Error("Skriv koordinater som lat, lon.");
+        }
+
+        const [lat, lon] = parts;
+
+        if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+          throw new Error("Koordinaterna är utanför giltigt spann.");
+        }
+
+        return [lon, lat];
+      }
+
+      function readSharedRoute() {
+        const params = new URLSearchParams(window.location.search);
+        const startParam = params.get("start-coord") || params.get("start");
+        const endParam = params.get("end-coord") || params.get("end");
+
+        try {
+          return {
+            start: startParam ? parseCoordinate(startParam) : initialStart,
+            end: endParam ? parseCoordinate(endParam) : initialEnd,
+          };
+        } catch {
+          return {
+            start: initialStart,
+            end: initialEnd,
+          };
+        }
+      }
+
+      const sharedRoute = readSharedRoute();
+      let currentStart = sharedRoute.start;
+      let currentEnd = sharedRoute.end;
 
       const esri = new ol.layer.Tile({
         visible: true,
@@ -336,8 +402,8 @@
         source: new ol.source.Vector(),
         style: new ol.style.Style({
           image: new ol.style.Circle({
-            radius: 7,
-            stroke: new ol.style.Stroke({ color: "#111111", width: 2 }),
+            radius: 9,
+            stroke: new ol.style.Stroke({ color: "#111111", width: 3 }),
             fill: new ol.style.Fill({ color: "#ffdf4d" }),
           }),
         }),
@@ -362,24 +428,26 @@
         return `${coord[1].toFixed(6)}, ${coord[0].toFixed(6)}`;
       }
 
-      function parseCoordinate(value) {
-        const parts = value
-          .trim()
-          .split(/[,\s]+/)
-          .filter(Boolean)
-          .map(Number);
+      function writeSharedRouteToUrl() {
+        const params = new URLSearchParams(window.location.search);
+        params.delete("start");
+        params.delete("end");
+        params.set(
+          "start-coord",
+          formatCoordinate(currentStart).replace(/\s/g, ""),
+        );
+        params.set("end-coord", formatCoordinate(currentEnd).replace(/\s/g, ""));
+        window.history.replaceState(
+          null,
+          "",
+          `${window.location.pathname}?${params.toString()}${window.location.hash}`,
+        );
+      }
 
-        if (parts.length !== 2 || parts.some((part) => Number.isNaN(part))) {
-          throw new Error("Skriv koordinater som lat, lon.");
-        }
-
-        const [lat, lon] = parts;
-
-        if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-          throw new Error("Koordinaterna är utanför giltigt spann.");
-        }
-
-        return [lon, lat];
+      function syncCoordinateFields() {
+        document.getElementById("start-input").value =
+          formatCoordinate(currentStart);
+        document.getElementById("end-input").value = formatCoordinate(currentEnd);
       }
 
       function buildRouteFeatures(start, end) {
@@ -398,10 +466,12 @@
         };
       }
 
-      function updateRoute(start, end, shouldFit = true) {
+      function updateRoute(start, end, shouldFit = true, shouldShare = true) {
         const { line, features } = buildRouteFeatures(start, end);
         const distanceKm = turf.length(line, { units: "kilometers" });
 
+        currentStart = start;
+        currentEnd = end;
         routeSource.clear();
         routeSource.addFeatures(features);
 
@@ -409,14 +479,15 @@
         pointSource.addFeatures([
           new ol.Feature({
             geometry: new ol.geom.Point(ol.proj.fromLonLat(start)),
-            name: "Start",
+            handle: "start",
           }),
           new ol.Feature({
             geometry: new ol.geom.Point(ol.proj.fromLonLat(end)),
-            name: "Slut",
+            handle: "end",
           }),
         ]);
 
+        syncCoordinateFields();
         document.getElementById("start-label").textContent =
           formatCoordinate(start);
         document.getElementById("end-label").textContent = formatCoordinate(end);
@@ -432,9 +503,65 @@
             duration: 250,
           });
         }
+
+        if (shouldShare) {
+          writeSharedRouteToUrl();
+        }
       }
 
       updateRoute(currentStart, currentEnd);
+
+      let draggedFeature = null;
+
+      map.on("pointermove", (event) => {
+        const hit = map.hasFeatureAtPixel(event.pixel, {
+          layerFilter: (layer) => layer === points,
+        });
+
+        map.getTargetElement().style.cursor = hit ? "grab" : "";
+      });
+
+      map.addInteraction(
+        new ol.interaction.Pointer({
+          handleDownEvent: (event) => {
+            draggedFeature = map.forEachFeatureAtPixel(
+              event.pixel,
+              (feature, layer) => (layer === points ? feature : null),
+            );
+
+            if (!draggedFeature) {
+              return false;
+            }
+
+            document.body.classList.add("dragging-point");
+            return true;
+          },
+          handleDragEvent: (event) => {
+            if (!draggedFeature) {
+              return;
+            }
+
+            const lonLat = ol.proj.toLonLat(event.coordinate);
+            const handle = draggedFeature.get("handle");
+
+            if (handle === "start") {
+              updateRoute(lonLat, currentEnd, false, false);
+            } else {
+              updateRoute(currentStart, lonLat, false, false);
+            }
+          },
+          handleUpEvent: () => {
+            if (!draggedFeature) {
+              return false;
+            }
+
+            draggedFeature = null;
+            document.body.classList.remove("dragging-point");
+            writeSharedRouteToUrl();
+            return false;
+          },
+        }),
+      );
 
       document.getElementById("basemap").addEventListener("change", (event) => {
         const selected = event.target.value;
@@ -466,6 +593,19 @@
           status.textContent = "";
         } catch (error) {
           status.textContent = error.message;
+        }
+      });
+
+      document.getElementById("copy-link").addEventListener("click", async () => {
+        const status = document.getElementById("route-status");
+
+        writeSharedRouteToUrl();
+
+        try {
+          await navigator.clipboard.writeText(window.location.href);
+          status.textContent = "Länk kopierad.";
+        } catch {
+          status.textContent = "Länken finns i adressfältet.";
         }
       });
     </script>
