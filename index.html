@@ -36,27 +36,63 @@
         z-index: 10;
         left: 16px;
         bottom: 16px;
-        width: min(430px, calc(100vw - 32px));
+        width: min(360px, calc(100vw - 24px));
         border: 1px solid rgba(255, 255, 255, 0.18);
         border-radius: 8px;
         background: rgba(18, 18, 18, 0.88);
         box-shadow: 0 18px 42px rgba(0, 0, 0, 0.35);
         backdrop-filter: blur(14px);
-        padding: 14px 16px;
+        padding: 10px 12px;
+      }
+
+      .panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
       }
 
       h1 {
-        margin: 0 0 10px;
-        font-size: 18px;
+        margin: 0;
+        font-size: 16px;
         line-height: 1.2;
+      }
+
+      .summary {
+        margin-top: 3px;
+        color: #eee8d7;
+        font-size: 12px;
+      }
+
+      .toggle-panel {
+        flex: 0 0 auto;
+        width: 34px;
+        height: 34px;
+        border: 1px solid rgba(255, 255, 255, 0.24);
+        border-radius: 6px;
+        background: #202020;
+        color: #fffdf6;
+        font-size: 18px;
+        line-height: 1;
+        cursor: pointer;
+      }
+
+      .panel-body {
+        display: grid;
+        gap: 10px;
+        margin-top: 10px;
+      }
+
+      .panel.collapsed .panel-body {
+        display: none;
       }
 
       dl {
         display: grid;
         grid-template-columns: max-content 1fr;
         gap: 6px 12px;
-        margin: 0 0 12px;
-        font-size: 14px;
+        margin: 0;
+        font-size: 13px;
         line-height: 1.35;
       }
 
@@ -77,6 +113,7 @@
         font-weight: 700;
       }
 
+      input,
       select {
         width: 100%;
         border: 1px solid rgba(255, 255, 255, 0.24);
@@ -87,12 +124,40 @@
         font: inherit;
       }
 
+      .coord-grid {
+        display: grid;
+        gap: 8px;
+      }
+
+      .actions {
+        display: grid;
+        grid-template-columns: 1fr max-content;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .update-route {
+        border: 0;
+        border-radius: 6px;
+        background: #ffdf4d;
+        color: #17140a;
+        cursor: pointer;
+        font: inherit;
+        font-weight: 750;
+        padding: 9px 12px;
+      }
+
+      .status {
+        min-height: 18px;
+        color: #f0b5a8;
+        font-size: 12px;
+      }
+
       .legend {
         display: flex;
         flex-wrap: wrap;
         gap: 10px 16px;
-        margin-top: 12px;
-        font-size: 13px;
+        font-size: 12px;
         color: #eee8d7;
       }
 
@@ -118,43 +183,93 @@
       .ol-attribution {
         font-size: 11px;
       }
+
+      @media (max-width: 520px) {
+        .panel {
+          left: 12px;
+          bottom: 12px;
+        }
+      }
     </style>
   </head>
   <body>
     <div id="map" aria-label="Satellitkarta med straight line mission"></div>
-    <aside class="panel" aria-label="Ruttinformation">
-      <h1>Straight line mission</h1>
-      <dl>
-        <dt>Start</dt>
-        <dd>59.115022, 18.234171</dd>
-        <dt>Slut</dt>
-        <dd>59.152230, 17.680517</dd>
-        <dt>Distans</dt>
-        <dd id="distance">Beräknar...</dd>
-        <dt>Silverzon</dt>
-        <dd>75 m åt varje håll från linjen</dd>
-      </dl>
-      <label>
-        Bildlager
-        <select id="basemap">
-          <option value="esri">Esri satellit</option>
-          <option value="sentinel">Sentinel-2 satellit</option>
-          <option value="topo">OpenTopoMap</option>
-        </select>
-      </label>
-      <div class="legend" aria-label="Teckenförklaring">
-        <span><i class="sample"></i>Rak linje</span>
-        <span><i class="sample buffer"></i>75 m avvikelse</span>
+    <aside class="panel collapsed" id="panel" aria-label="Ruttinformation">
+      <div class="panel-header">
+        <div>
+          <h1>Straight line mission</h1>
+          <div class="summary"><span id="distance-summary">Beräknar...</span> · silver 75 m</div>
+        </div>
+        <button
+          class="toggle-panel"
+          id="toggle-panel"
+          type="button"
+          aria-label="Visa eller dölj ruttpanelen"
+          aria-expanded="false"
+        >
+          +
+        </button>
+      </div>
+      <div class="panel-body">
+        <div class="coord-grid">
+          <label>
+            Startkoordinat
+            <input
+              id="start-input"
+              autocomplete="off"
+              inputmode="decimal"
+              value="59.115022, 18.234171"
+            />
+          </label>
+          <label>
+            Slutkoordinat
+            <input
+              id="end-input"
+              autocomplete="off"
+              inputmode="decimal"
+              value="59.152230, 17.680517"
+            />
+          </label>
+          <div class="actions">
+            <div class="status" id="route-status" aria-live="polite"></div>
+            <button class="update-route" id="update-route" type="button">
+              Uppdatera
+            </button>
+          </div>
+        </div>
+        <dl>
+          <dt>Start</dt>
+          <dd id="start-label">59.115022, 18.234171</dd>
+          <dt>Slut</dt>
+          <dd id="end-label">59.152230, 17.680517</dd>
+          <dt>Distans</dt>
+          <dd id="distance">Beräknar...</dd>
+          <dt>Silverzon</dt>
+          <dd>75 m åt varje håll från linjen</dd>
+        </dl>
+        <label>
+          Bildlager
+          <select id="basemap">
+            <option value="esri">Esri satellit</option>
+            <option value="sentinel">Sentinel-2 satellit</option>
+            <option value="topo">OpenTopoMap</option>
+          </select>
+        </label>
+        <div class="legend" aria-label="Teckenförklaring">
+          <span><i class="sample"></i>Rak linje</span>
+          <span><i class="sample buffer"></i>75 m avvikelse</span>
+        </div>
       </div>
     </aside>
 
     <script src="https://cdn.jsdelivr.net/npm/ol@10.5.0/dist/ol.js"></script>
     <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
     <script>
-      const start = [18.234171, 59.115022];
-      const end = [17.680517, 59.15223];
-      const line = turf.lineString([start, end]);
-      const buffer = turf.buffer(line, 75, { units: "meters", steps: 48 });
+      const initialStart = [18.234171, 59.115022];
+      const initialEnd = [17.680517, 59.15223];
+      let currentStart = initialStart;
+      let currentEnd = initialEnd;
+      const geoJsonFormat = new ol.format.GeoJSON();
 
       const esri = new ol.layer.Tile({
         visible: true,
@@ -189,15 +304,7 @@
         }),
       });
 
-      const routeSource = new ol.source.Vector({
-        features: new ol.format.GeoJSON().readFeatures(
-          turf.featureCollection([buffer, line]),
-          {
-            dataProjection: "EPSG:4326",
-            featureProjection: "EPSG:3857",
-          },
-        ),
-      });
+      const routeSource = new ol.source.Vector();
 
       const route = new ol.layer.Vector({
         source: routeSource,
@@ -226,18 +333,7 @@
       });
 
       const points = new ol.layer.Vector({
-        source: new ol.source.Vector({
-          features: [
-            new ol.Feature({
-              geometry: new ol.geom.Point(ol.proj.fromLonLat(start)),
-              name: "Start",
-            }),
-            new ol.Feature({
-              geometry: new ol.geom.Point(ol.proj.fromLonLat(end)),
-              name: "Slut",
-            }),
-          ],
-        }),
+        source: new ol.source.Vector(),
         style: new ol.style.Style({
           image: new ol.style.Circle({
             radius: 7,
@@ -252,18 +348,93 @@
         layers: [esri, sentinel, topo, route, points],
         view: new ol.View({
           center: ol.proj.fromLonLat([
-            (start[0] + end[0]) / 2,
-            (start[1] + end[1]) / 2,
+            (currentStart[0] + currentEnd[0]) / 2,
+            (currentStart[1] + currentEnd[1]) / 2,
           ]),
           zoom: 12,
           constrainResolution: true,
         }),
       });
 
-      map.getView().fit(routeSource.getExtent(), {
-        padding: [70, 40, 190, 40],
-        maxZoom: 12,
-      });
+      const pointSource = points.getSource();
+
+      function formatCoordinate(coord) {
+        return `${coord[1].toFixed(6)}, ${coord[0].toFixed(6)}`;
+      }
+
+      function parseCoordinate(value) {
+        const parts = value
+          .trim()
+          .split(/[,\s]+/)
+          .filter(Boolean)
+          .map(Number);
+
+        if (parts.length !== 2 || parts.some((part) => Number.isNaN(part))) {
+          throw new Error("Skriv koordinater som lat, lon.");
+        }
+
+        const [lat, lon] = parts;
+
+        if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+          throw new Error("Koordinaterna är utanför giltigt spann.");
+        }
+
+        return [lon, lat];
+      }
+
+      function buildRouteFeatures(start, end) {
+        const line = turf.lineString([start, end]);
+        const buffer = turf.buffer(line, 75, { units: "meters", steps: 48 });
+
+        return {
+          line,
+          features: geoJsonFormat.readFeatures(
+            turf.featureCollection([buffer, line]),
+            {
+              dataProjection: "EPSG:4326",
+              featureProjection: "EPSG:3857",
+            },
+          ),
+        };
+      }
+
+      function updateRoute(start, end, shouldFit = true) {
+        const { line, features } = buildRouteFeatures(start, end);
+        const distanceKm = turf.length(line, { units: "kilometers" });
+
+        routeSource.clear();
+        routeSource.addFeatures(features);
+
+        pointSource.clear();
+        pointSource.addFeatures([
+          new ol.Feature({
+            geometry: new ol.geom.Point(ol.proj.fromLonLat(start)),
+            name: "Start",
+          }),
+          new ol.Feature({
+            geometry: new ol.geom.Point(ol.proj.fromLonLat(end)),
+            name: "Slut",
+          }),
+        ]);
+
+        document.getElementById("start-label").textContent =
+          formatCoordinate(start);
+        document.getElementById("end-label").textContent = formatCoordinate(end);
+        document.getElementById("distance").textContent =
+          `${distanceKm.toFixed(2)} km`;
+        document.getElementById("distance-summary").textContent =
+          `${distanceKm.toFixed(2)} km`;
+
+        if (shouldFit) {
+          map.getView().fit(routeSource.getExtent(), {
+            padding: [64, 32, 150, 32],
+            maxZoom: 12,
+            duration: 250,
+          });
+        }
+      }
+
+      updateRoute(currentStart, currentEnd);
 
       document.getElementById("basemap").addEventListener("change", (event) => {
         const selected = event.target.value;
@@ -272,9 +443,31 @@
         topo.setVisible(selected === "topo");
       });
 
-      const distanceKm = turf.length(line, { units: "kilometers" });
-      document.getElementById("distance").textContent =
-        `${distanceKm.toFixed(2)} km`;
+      document.getElementById("toggle-panel").addEventListener("click", () => {
+        const panel = document.getElementById("panel");
+        const isCollapsed = panel.classList.toggle("collapsed");
+        const button = document.getElementById("toggle-panel");
+
+        button.textContent = isCollapsed ? "+" : "−";
+        button.setAttribute("aria-expanded", String(!isCollapsed));
+      });
+
+      document.getElementById("update-route").addEventListener("click", () => {
+        const status = document.getElementById("route-status");
+
+        try {
+          currentStart = parseCoordinate(
+            document.getElementById("start-input").value,
+          );
+          currentEnd = parseCoordinate(
+            document.getElementById("end-input").value,
+          );
+          updateRoute(currentStart, currentEnd);
+          status.textContent = "";
+        } catch (error) {
+          status.textContent = error.message;
+        }
+      });
     </script>
   </body>
 </html>
