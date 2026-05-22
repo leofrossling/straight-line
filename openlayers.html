@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="sv">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Straight Line Mission - OpenLayers</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/ol@10.5.0/ol.css"
+    />
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: #151515;
+        color: #f7f3ea;
+      }
+
+      #map {
+        width: 100vw;
+        height: 100vh;
+      }
+
+      .panel {
+        position: fixed;
+        z-index: 10;
+        left: 16px;
+        bottom: 16px;
+        width: min(430px, calc(100vw - 32px));
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 8px;
+        background: rgba(18, 18, 18, 0.88);
+        box-shadow: 0 18px 42px rgba(0, 0, 0, 0.35);
+        backdrop-filter: blur(14px);
+        padding: 14px 16px;
+      }
+
+      h1 {
+        margin: 0 0 10px;
+        font-size: 18px;
+        line-height: 1.2;
+      }
+
+      dl {
+        display: grid;
+        grid-template-columns: max-content 1fr;
+        gap: 6px 12px;
+        margin: 0 0 12px;
+        font-size: 14px;
+        line-height: 1.35;
+      }
+
+      dt {
+        color: #d8cda9;
+        font-weight: 700;
+      }
+
+      dd {
+        margin: 0;
+      }
+
+      label {
+        display: grid;
+        gap: 6px;
+        font-size: 13px;
+        color: #d8cda9;
+        font-weight: 700;
+      }
+
+      select {
+        width: 100%;
+        border: 1px solid rgba(255, 255, 255, 0.24);
+        border-radius: 6px;
+        background: #202020;
+        color: #fffdf6;
+        padding: 8px 10px;
+        font: inherit;
+      }
+
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 16px;
+        margin-top: 12px;
+        font-size: 13px;
+        color: #eee8d7;
+      }
+
+      .legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+      }
+
+      .sample {
+        width: 26px;
+        height: 4px;
+        border-radius: 999px;
+        background: #ffdf4d;
+      }
+
+      .sample.buffer {
+        height: 14px;
+        border: 2px solid #45d483;
+        background: rgba(69, 212, 131, 0.26);
+      }
+
+      .ol-attribution {
+        font-size: 11px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map" aria-label="Satellitkarta med straight line mission"></div>
+    <aside class="panel" aria-label="Ruttinformation">
+      <h1>Straight line mission</h1>
+      <dl>
+        <dt>Start</dt>
+        <dd>59.115022, 18.234171</dd>
+        <dt>Slut</dt>
+        <dd>59.152230, 17.680517</dd>
+        <dt>Distans</dt>
+        <dd id="distance">Beräknar...</dd>
+        <dt>Silverzon</dt>
+        <dd>75 m åt varje håll från linjen</dd>
+      </dl>
+      <label>
+        Bildlager
+        <select id="basemap">
+          <option value="esri">Esri satellit</option>
+          <option value="sentinel">Sentinel-2 satellit</option>
+          <option value="topo">OpenTopoMap</option>
+        </select>
+      </label>
+      <div class="legend" aria-label="Teckenförklaring">
+        <span><i class="sample"></i>Rak linje</span>
+        <span><i class="sample buffer"></i>75 m avvikelse</span>
+      </div>
+    </aside>
+
+    <script src="https://cdn.jsdelivr.net/npm/ol@10.5.0/dist/ol.js"></script>
+    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+    <script>
+      const start = [18.234171, 59.115022];
+      const end = [17.680517, 59.15223];
+      const line = turf.lineString([start, end]);
+      const buffer = turf.buffer(line, 75, { units: "meters", steps: 48 });
+
+      const esri = new ol.layer.Tile({
+        visible: true,
+        source: new ol.source.XYZ({
+          url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+          maxZoom: 19,
+          crossOrigin: "anonymous",
+          attributions:
+            "Tiles &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community",
+        }),
+      });
+
+      const sentinel = new ol.layer.Tile({
+        visible: false,
+        source: new ol.source.XYZ({
+          url: "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/GoogleMapsCompatible/{z}/{y}/{x}.jpg",
+          maxZoom: 16,
+          crossOrigin: "anonymous",
+          attributions:
+            'Sentinel-2 cloudless - <a href="https://s2maps.eu/">s2maps.eu</a> by EOX IT Services GmbH',
+        }),
+      });
+
+      const topo = new ol.layer.Tile({
+        visible: false,
+        source: new ol.source.XYZ({
+          url: "https://{a-c}.tile.opentopomap.org/{z}/{x}/{y}.png",
+          maxZoom: 17,
+          crossOrigin: "anonymous",
+          attributions:
+            'Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a>',
+        }),
+      });
+
+      const routeSource = new ol.source.Vector({
+        features: new ol.format.GeoJSON().readFeatures(
+          turf.featureCollection([buffer, line]),
+          {
+            dataProjection: "EPSG:4326",
+            featureProjection: "EPSG:3857",
+          },
+        ),
+      });
+
+      const route = new ol.layer.Vector({
+        source: routeSource,
+        style: (feature) => {
+          const geometryType = feature.getGeometry().getType();
+
+          if (geometryType.includes("Polygon")) {
+            return new ol.style.Style({
+              stroke: new ol.style.Stroke({
+                color: "rgba(69, 212, 131, 0.95)",
+                width: 2,
+              }),
+              fill: new ol.style.Fill({
+                color: "rgba(69, 212, 131, 0.22)",
+              }),
+            });
+          }
+
+          return new ol.style.Style({
+            stroke: new ol.style.Stroke({
+              color: "#ffdf4d",
+              width: 4,
+            }),
+          });
+        },
+      });
+
+      const points = new ol.layer.Vector({
+        source: new ol.source.Vector({
+          features: [
+            new ol.Feature({
+              geometry: new ol.geom.Point(ol.proj.fromLonLat(start)),
+              name: "Start",
+            }),
+            new ol.Feature({
+              geometry: new ol.geom.Point(ol.proj.fromLonLat(end)),
+              name: "Slut",
+            }),
+          ],
+        }),
+        style: new ol.style.Style({
+          image: new ol.style.Circle({
+            radius: 7,
+            stroke: new ol.style.Stroke({ color: "#111111", width: 2 }),
+            fill: new ol.style.Fill({ color: "#ffdf4d" }),
+          }),
+        }),
+      });
+
+      const map = new ol.Map({
+        target: "map",
+        layers: [esri, sentinel, topo, route, points],
+        view: new ol.View({
+          center: ol.proj.fromLonLat([
+            (start[0] + end[0]) / 2,
+            (start[1] + end[1]) / 2,
+          ]),
+          zoom: 12,
+          constrainResolution: true,
+        }),
+      });
+
+      map.getView().fit(routeSource.getExtent(), {
+        padding: [70, 40, 190, 40],
+        maxZoom: 12,
+      });
+
+      document.getElementById("basemap").addEventListener("change", (event) => {
+        const selected = event.target.value;
+        esri.setVisible(selected === "esri");
+        sentinel.setVisible(selected === "sentinel");
+        topo.setVisible(selected === "topo");
+      });
+
+      const distanceKm = turf.length(line, { units: "kilometers" });
+      document.getElementById("distance").textContent =
+        `${distanceKm.toFixed(2)} km`;
+    </script>
+  </body>
+</html>
